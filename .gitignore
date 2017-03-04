@@ -1,0 +1,4 @@
+*.xt
+*.csv
+debug
+xdebuglogparser
