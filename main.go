@@ -65,6 +65,7 @@ var sortKey string
 var supportedKeys []string
 var resultsLimit int
 var csvFileName string
+var useCSV bool
 
 func main() {
 
@@ -73,6 +74,9 @@ func main() {
 	sortKeyPtr := flag.String("sortKey", "flow", "Sort Key [ flow, calls, time, memory ] ")
 	resultsLimitPtr := flag.Int("limit", 25, "Number of results returned")
 	useCSVPtr := flag.Bool("useCSV", false, "Output to csv file")
+	resultsLimit = *resultsLimitPtr
+	useCSV = *useCSVPtr
+	//sortKey = *sortKeyPtr
 
 	flag.Parse()
 	if len(*filenamePtr) == 0 {
@@ -97,10 +101,45 @@ func main() {
 	f, err := os.Open(*filenamePtr)
 
 	check(err)
-	newlinebytes := byte('\n')
+
 	reader := bufio.NewReader(f)
+	funcs := parse(reader, *sortKeyPtr)
+	f.Close()
+	sort.Sort(FunctionList(funcs))
+
+	writeToStdout(funcs)
+}
+func writeToStdout(funcs []functionEntry) {
+
+	table := tablewriter.NewWriter(os.Stdout)
+
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetHeader([]string{"Name", "Calls", "Time Inclusive", "Memory", "Nested Time", "Nested Memory", "Order"})
+	//check(err)
+	//Convert to multi dimensional array
+	var multidim [][]string
+	var dim []string
+	for _, v := range funcs {
+		dim = []string{
+			v.name,
+			strconv.Itoa(v.calls),
+			fmt.Sprintf("%f", v.timeInclusive),
+			fmt.Sprintf("%d", v.memoryInclusive),
+			fmt.Sprintf("%f", v.timeOwn),
+			fmt.Sprintf("%d", v.memoryOwn),
+			fmt.Sprintf("%d", v.order),
+		}
+		multidim = append(multidim, dim)
+	}
+	table.AppendBulk(multidim[:resultsLimit])
+	table.Render()
+	if useCSV {
+		writeToCSV(multidim)
+	}
+}
+func parse(reader *bufio.Reader, sortKey string) []functionEntry {
 	lineCount := int(0)
-	sortKey = *sortKeyPtr
+	newlinebytes := byte('\n')
 	stack = make(map[string]stackEntry)
 	functions = make(map[string]stackEntry)
 
@@ -122,6 +161,7 @@ func main() {
 		}
 
 		parsedSlice := tabRegexp.Split(line, -1)
+		//fmt.Println(line)
 
 		if len(parsedSlice) < 5 {
 			continue
@@ -170,64 +210,34 @@ func main() {
 				order:        lineCount,
 			}
 			stack[depthKey] = stackentry
-
 			stackFunctions = append(stackFunctions, xLine.name)
 		} else if xLine.entry == 1 {
 			//get Previous Line
 			prevXLine := stack[depthKey]
-
 			dTimeString := fmt.Sprintf("%f", xLine.time-prevXLine.time)
 			dTime, _ := strconv.ParseFloat(dTimeString, 64)
 			dMemory := xLine.memoryUsage - prevXLine.memory
 			prevDepthKey := strconv.FormatInt(xLine.depth-1, 10)
 
 			se2 := stack[prevDepthKey]
-			se2.time += dTime
-			se2.memory += int64(dMemory)
-
+			se2.nestedTime += dTime
+			se2.nestedMemory += dMemory
 			stack[prevDepthKey] = se2
 
 			stackFunctions = slicePop(stackFunctions)
 
 			addToFunction(prevXLine.funcName,
 				dTime,
-				int64(dMemory),
+				dMemory,
 				prevXLine.nestedTime,
 				prevXLine.nestedMemory,
 				prevXLine.order)
 		}
 	}
-	f.Close()
 
 	//sort by sortKey
 	funcs := getFunctions()
-	sort.Sort(FunctionList(funcs))
-
-	table := tablewriter.NewWriter(os.Stdout)
-
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetHeader([]string{"Name", "Calls", "Time Inclusive", "Memory", "Nested Time", "Nested Memory", "Order"})
-	//check(err)
-	//Convert to multi dimensional array
-	var multidim [][]string
-	var dim []string
-	for _, v := range funcs {
-		dim = []string{
-			v.name,
-			strconv.Itoa(v.calls),
-			fmt.Sprintf("%f", v.timeInclusive),
-			fmt.Sprintf("%d", v.memoryInclusive),
-			fmt.Sprintf("%f", v.timeChildren),
-			fmt.Sprintf("%d", v.memoryChildren),
-			fmt.Sprintf("%d", v.order),
-		}
-		multidim = append(multidim, dim)
-	}
-	table.AppendBulk(multidim[:*resultsLimitPtr])
-	table.Render()
-	if *useCSVPtr {
-		writeToCSV(multidim)
-	}
+	return funcs
 
 }
 
@@ -305,7 +315,6 @@ func addToFunction(functionName string, time float64, memory int64, nestedTime f
 	if _, prs := functions[functionName]; prs == false {
 		functions[functionName] = stackEntry{}
 	}
-	//fmt.Println("stackFunctions", stackFunctions)
 	elem := functions[functionName]
 	elem.calls++
 	found := false
@@ -322,5 +331,4 @@ func addToFunction(functionName string, time float64, memory int64, nestedTime f
 		elem.order = order
 	}
 	functions[functionName] = elem
-	//	fmt.Printf("%s ---> %d\n", functionName, elem.calls)
 }

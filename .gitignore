@@ -1,4 +1,7 @@
 *.xt
 *.csv
 debug
-xdebuglogparser
+debug.test
+xdebuglogparser_darwin
+xdebuglogparser_linux
+
