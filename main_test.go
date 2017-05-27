@@ -1,12 +1,26 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
 
+func TestCallOutput(t *testing.T) {
+	resultsLimit = 25
+	sortKey = "calls"
+	f, _ := os.Open("test.xt")
+	reader := bufio.NewReader(f)
+	funcs := parse(reader, "calls")
+
+	sort.Sort(FunctionList(funcs))
+	writeToStdout(funcs)
+
+}
 func TestXxx(t *testing.T) {
 
 	num := fmt.Sprintf("%f", float64(1.225788)-float64(1.225784)) //  4e-06
